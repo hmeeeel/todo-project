@@ -1,0 +1,53 @@
+<div
+    class="task-files"
+    data-file-manager
+>
+
+    <div class="task-files__title">
+        Прикреплённые файлы
+    </div>
+
+    <div
+        class="task-files__list"
+        data-existing-files
+    >
+        <% (task.files || []).forEach(function(file) { %>
+            <div
+                class="task-file"
+                data-existing-file
+                data-file-id="<%= file.id %>"
+            >
+                <a
+                    href="/uploads/<%= encodeURIComponent(file.storedName) %>"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="task-file__name"
+                >
+                     <%= file.originalName %>
+                </a>
+
+                <button
+                    type="button"
+                    class="link-button link-button--danger"
+                    data-remove-existing
+                >
+                    Удалить
+                </button>
+            </div>
+        <% }); %>
+    </div>
+
+    <div
+        class="task-files__list"
+        data-new-files
+    >
+    </div>
+
+    <div
+        class="task-files__empty"
+        data-files-empty
+        <%= task.files && task.files.length ? 'hidden' : '' %>
+    >
+        Файлов пока нет
+    </div>
+</div>

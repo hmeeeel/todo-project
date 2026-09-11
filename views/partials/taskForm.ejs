@@ -1,0 +1,105 @@
+<form
+    class="task-form"
+    action="<%= actionUrl %>"
+    method="POST"
+    enctype="multipart/form-data"
+    data-file-form
+>
+    <input
+        type="hidden"
+        name="returnTo"
+        value="<%= currentUrl %>"
+    >
+
+    <% if (dueDate) { %>
+        <input
+            type="hidden"
+            name="dueDate"
+            value="<%= dueDate %>"
+        >
+    <% } %>
+
+    <label class="task-form__label">
+        Название задачи
+
+        <input
+            class="task-form__input"
+            type="text"
+            name="title"
+            required
+            maxlength="200"
+            placeholder="Введите название задачи"
+        >
+    </label>
+
+
+    <div class="task-form__field">
+
+        <span class="task-form__label">
+            Прикрепить файлы
+        </span>
+
+        <input
+            type="hidden"
+            name="deletedFileIds"
+            value="[]"
+            data-deleted-file-ids
+        >
+
+        <div class="file-picker">
+
+            <input
+                type="file"
+                id="attachments"
+                name="attachments"
+                multiple
+                accept="*/*"
+                class="file-picker__input"
+                data-new-files-input
+            >
+
+            <label
+                for="attachments"
+                class="file-picker__button"
+            >
+                Выбрать файлы
+            </label>
+
+            <span class="file-picker__hint">
+                Можно выбрать до 3 файлов
+            </span>
+
+        </div>
+
+        <div
+            class="task-files"
+            data-file-manager
+        >
+
+            <div
+                class="task-files__list"
+                data-existing-files
+            >
+            </div>
+
+            <div
+                class="task-files__list"
+                data-new-files
+            >
+            </div>
+
+            <div
+                class="task-files__empty"
+                data-files-empty
+            >
+                Файлов пока нет
+            </div>
+        </div>
+    </div>
+
+    <button
+        type="submit"
+    >
+        Добавить задачу
+    </button>
+</form>

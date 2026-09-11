@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <%- include('partials/head') %>
+
+  <title>Календарь</title>
+</head>
+
+<body>
+  <header class="page-header">
+
+    <div>
+      <h1>Календарь</h1>
+    </div>
+
+    <a
+      class="button button--secondary"
+      href="/"
+    >
+      Задачи
+    </a>
+
+  </header>
+
+  <% if (error) { %>
+
+    <div class="alert">
+      <%= error %>
+    </div>
+
+  <% } %>
+
+  <nav class="month-nav">
+
+    <a
+      href="/calendar?year=<%= prev.year %>&month=<%= prev.month %>"
+    >
+       Предыдущий
+    </a>
+
+    <div class="month-nav__title">
+      <%= monthName %> <%= year %>
+    </div>
+
+    <a
+      href="/calendar?year=<%= next.year %>&month=<%= next.month %>"
+    >
+      Следующий 
+    </a>
+
+  </nav>
+
+  <table class="calendar-grid">
+
+    <thead>
+      <tr>
+        <th>Пн</th>
+        <th>Вт</th>
+        <th>Ср</th>
+        <th>Чт</th>
+        <th>Пт</th>
+        <th>Сб</th>
+        <th>Вс</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      <% weeks.forEach(function(week) { %>
+
+        <tr>
+
+          <% week.forEach(function(day) { %>
+
+            <td
+              class="
+                calendar-cell
+                <%= !day.inCurrentMonth
+                  ? 'calendar-cell--other-month'
+                  : ''
+                %>
+                <%= day.isToday
+                  ? 'calendar-cell--today'
+                  : ''
+                %>
+                <%= day.dateStr === selectedDate
+                  ? 'calendar-cell--selected'
+                  : ''
+                %>
+              "
+            >
+              <a
+                class="calendar-cell__link"
+                href="/calendar?year=<%= year %>&month=<%= month %>&date=<%= day.dateStr %>"
+              >
+                <span class="calendar-cell__number">
+                  <%= day.dayNumber %>
+                </span>
+              </a>
+
+              <% if (tasksByDate[day.dateStr]) { %>
+
+                <div class="calendar-cell__tasks">
+
+                  <% tasksByDate[day.dateStr].forEach(function(task) { %>
+
+                    <div
+                      class="
+                        calendar-task
+                        calendar-task--<%= task.status %>
+                      "
+                    >
+                      <%= task.title %>
+                    </div>
+                  <% }); %>
+                </div>
+              <% } %>
+            </td>
+          <% }); %>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <% if (selectedDate) { %>
+
+    <section class="calendar-selected">
+
+      <h2>
+        Задачи на <%= selectedDate %>
+      </h2>
+
+      <%- include('partials/taskList', {
+        tasks: selectedTasks,
+        currentUrl
+      }) %>
+
+      <% if (canCreate) { %>
+
+        <details
+          class="add-task"
+          open
+        >
+
+          <summary>
+            Добавить задачу
+          </summary>
+
+          <%- include('partials/taskForm', {
+            actionUrl: '/tasks',
+            dueDate: selectedDate,
+            currentUrl
+          }) %>
+
+        </details>
+
+      <% } else { %>
+
+        <div class="calendar-past-message">
+          На прошедшую дату нельзя создавать новые задачи.
+        </div>
+
+      <% } %>
+
+    </section>
+
+  <% } %>
+
+  <script src="/js/fileDropzone.js"></script>
+</body>
+</html>

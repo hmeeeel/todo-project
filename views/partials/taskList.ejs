@@ -1,0 +1,181 @@
+<%
+    const statusLabels = {
+        todo: 'Запланирована',
+        done: 'Выполнена'
+    };
+%>
+
+
+<ul class="task-list">
+
+    <% if (!tasks.length) { %>
+
+        <li class="task-list__empty">
+            Задач на эту дату нет.
+        </li>
+
+    <% } %>
+
+
+    <% tasks.forEach(function(task) { %>
+        <li class="task-card task-card--<%= task.status %>">
+            <div class="task-card__main">
+                <form
+                    class="task-status-form"
+                    action="/tasks/<%= task.id %>/status"
+                    method="POST"
+                >
+
+                    <input
+                        type="hidden"
+                        name="returnTo"
+                        value="<%= currentUrl %>"
+                    >
+
+                    <label class="task-status-button">
+
+                        <input
+                            type="checkbox"
+                            name="status"
+                            value="done"
+                            <%= task.status === 'done' ? 'checked' : '' %>
+                            onchange="this.form.submit()"
+                        >
+
+                        <span class="task-status-button__circle">
+                            <%= task.status === 'done' ? ' ' : '' %>
+                        </span>
+                    </label>
+                </form>
+
+                <div class="task-card__content">
+
+                    <div class="task-card__title">
+                        <%= task.title %>
+                    </div>
+
+                    <div class="task-card__meta">
+
+                        <span class="task-card__status-label">
+                            <%= statusLabels[task.status] %>
+                        </span>
+
+                        <% if (task.files && task.files.length) { %>
+
+                            <span class="task-card__files-count">
+                                Ф <%= task.files.length %>
+                            </span>
+                        <% } %>
+                    </div>
+                </div>
+
+                <details class="task-card__details">
+
+                    <summary class="task-card__edit-button">
+                        Изменить
+                    </summary>
+
+
+                    <form
+                        class="task-edit-form"
+                        action="/tasks/<%= task.id %>/edit"
+                        method="POST"
+                        enctype="multipart/form-data"
+                        data-file-form
+                    >
+
+                        <input
+                            type="hidden"
+                            name="returnTo"
+                            value="<%= currentUrl %>"
+                        >
+
+                        <input
+                            type="hidden"
+                            name="deletedFileIds"
+                            value="[]"
+                            data-deleted-file-ids
+                        >
+
+                        <label class="task-form__label">
+
+                            Название
+
+                            <input
+                                class="task-form__input"
+                                type="text"
+                                name="title"
+                                value="<%= task.title %>"
+                                required
+                                maxlength="200"
+                            >
+
+                        </label>
+
+                        <div class="task-edit-form__status">
+                            <span>
+                                Статус:
+                            </span>
+                            <label class="task-status-button task-status-button--edit">
+                                <input
+                                    type="checkbox"
+                                    name="status"
+                                    value="done"
+                                    <%= task.status === 'done' ? 'checked' : '' %>
+                                >
+
+                                <span class="task-status-button__circle">
+                                    <%= task.status === 'done' ? ' ' : '' %>
+                                </span>
+
+                                <span>
+                                    Выполнена
+                                </span>
+                            </label>
+                        </div>
+
+                        <%- include('fileList', { task: task }) %>
+
+                        <div class="task-form__field">
+
+                            <span class="task-form__label">
+                                Добавить файлы
+                            </span>
+
+                            <div class="file-picker">
+
+                                <input
+                                    type="file"
+                                    id="attachments-<%= task.id %>"
+                                    name="attachments"
+                                    multiple
+                                    accept="*/*"
+                                    class="file-picker__input"
+                                    data-new-files-input
+                                >
+
+                                <label
+                                    for="attachments-<%= task.id %>"
+                                    class="file-picker__button"
+                                >
+                                    Выбрать файлы
+                                </label>
+
+                                <span class="file-picker__hint">
+                                    Можно выбрать до 3 файлов
+                                </span>
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            class="task-edit-form__submit"
+                        >
+                            Сохранить
+                        </button>
+                    </form>
+                </details>
+            </div>
+        </li>
+    <% }); %>
+</ul>

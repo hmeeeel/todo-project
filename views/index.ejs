@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <%- include('partials/head') %>
+
+  <title>Задачи</title>
+</head>
+
+<body>
+
+  <header class="page-header">
+
+    <div>
+      <h1>Мои задачи</h1>
+
+      <p class="page-header__date">
+        <%= selectedDate %>
+      </p>
+    </div>
+
+    <a
+      class="button button--secondary"
+      href="/calendar"
+    >
+      Календарь
+    </a>
+
+  </header>
+
+  <% if (error) { %>
+    <div class="alert">
+      <%= error %>
+    </div>
+  <% } %>
+
+  <%- include('partials/dateRibbon', {
+    ribbon,
+    selectedDate,
+    status
+  }) %>
+
+  <form
+    class="status-filter"
+    method="GET"
+    action="/"
+  >
+
+    <input
+      type="hidden"
+      name="date"
+      value="<%= selectedDate %>"
+    >
+
+    <button
+      class="status-filter__button
+        <%= status === 'all'
+          ? 'status-filter__button--active'
+          : ''
+        %>"
+      type="submit"
+      name="status"
+      value="all"
+    >
+      Все
+    </button>
+
+    <button
+      class="status-filter__button
+        <%= status === 'todo'
+          ? 'status-filter__button--active'
+          : ''
+        %>"
+      type="submit"
+      name="status"
+      value="todo"
+    >
+      Запланированные
+    </button>
+
+    <button
+      class="status-filter__button
+        <%= status === 'done'
+          ? 'status-filter__button--active'
+          : ''
+        %>"
+      type="submit"
+      name="status"
+      value="done"
+    >
+      Выполненные
+    </button>
+
+  </form>
+
+  <main class="page-content">
+
+    <%- include('partials/taskList', {
+      tasks,
+      currentUrl
+    }) %>
+
+    <% if (canCreate) { %>
+
+      <details class="add-task">
+
+        <summary>
+          Добавить задачу
+        </summary>
+
+        <%- include('partials/taskForm', {
+          actionUrl: '/tasks',
+          dueDate: selectedDate,
+          currentUrl
+        }) %>
+
+      </details>
+
+    <% } %>
+
+  </main>
+
+  <script src="/js/fileDropzone.js"></script>
+
+</body>
+
+</html>
