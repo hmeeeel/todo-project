@@ -5,7 +5,9 @@ const path = require('path');
 
 const pool = require('../db');
 const upload = require('../middlewares/upload');
+const { authenticate, requireRole } = require('../middlewares/auth');
 const { isPast, parseDate } = require('../utils/dateUtils');
+const logger = require('../logger');
 
 const router = express.Router();
 
@@ -31,7 +33,13 @@ function removeFileFromDisk(storedName) {
 
 // вернуть задачу вместе со списком её файлов
 async function getTaskWithFiles(id) {
-  const taskResult = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
+  const taskResult = await pool.query(
+    `SELECT t.*, u.email AS creator_email
+     FROM tasks t
+     LEFT JOIN users u ON t.created_by = u.id
+     WHERE t.id = $1`,
+    [id]
+  );
   if (taskResult.rows.length === 0) return null;
 
   const task = taskResult.rows[0];
@@ -40,7 +48,16 @@ async function getTaskWithFiles(id) {
   return task;
 }
 
-// GET /api/tasks?date=YYYY-MM-DD&status=all|todo|done
+// admin может всё; editor - только свои задачи (created_by совпадает с его id)
+function canModifyTask(user, task) {
+  if (user.role === 'admin') return true;
+  if (user.role === 'editor' && task.created_by === user.id) return true;
+  return false;
+}
+
+router.use(authenticate); // все маршруты в этом файле требуют авторизации
+
+// GET /api/tasks?date=YYYY-MM-DD&status=all|todo|done - читать может любая роль (в т.ч. viewer)
 router.get('/', async (req, res) => {
   const { date, status } = req.query;
 
@@ -49,22 +66,22 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    let query = 'SELECT * FROM tasks';
+    let query = 'SELECT t.*, u.email AS creator_email FROM tasks t LEFT JOIN users u ON t.created_by = u.id';
     const params = [];
     const conditions = [];
 
     if (date) {
       params.push(date);
-      conditions.push(`due_date = $${params.length}`);
+      conditions.push(`t.due_date = $${params.length}`);
     }
     if (status && status !== 'all') {
       params.push(status);
-      conditions.push(`status = $${params.length}`);
+      conditions.push(`t.status = $${params.length}`);
     }
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY created_at ASC';
+    query += ' ORDER BY t.created_at ASC';
 
     const tasksResult = await pool.query(query, params);
     const tasks = tasksResult.rows;
@@ -76,12 +93,12 @@ router.get('/', async (req, res) => {
 
     res.status(200).json(tasks);
   } catch (err) {
-    console.error(err);
+    logger.error('tasks_list_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// GET /api/tasks/:id
+// GET /api/tasks/:id - читать может любая роль
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) {
@@ -95,13 +112,13 @@ router.get('/:id', async (req, res) => {
     }
     res.status(200).json(task);
   } catch (err) {
-    console.error(err);
+    logger.error('task_get_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// POST /api/tasks — создать задачу (+файлы)
-router.post('/', upload.array('attachments', 3), async (req, res) => {
+// POST /api/tasks - создавать могут admin и editor, viewer - нет
+router.post('/', requireRole('admin', 'editor'), upload.array('attachments', 3), async (req, res) => {
   const title = req.body.title ? req.body.title.trim() : '';
   const dueDate = req.body.dueDate;
 
@@ -123,8 +140,8 @@ router.post('/', upload.array('attachments', 3), async (req, res) => {
   try {
     const id = crypto.randomUUID();
     await pool.query(
-      'INSERT INTO tasks (id, title, due_date, status) VALUES ($1, $2, $3, $4)',
-      [id, title, dueDate, 'todo']
+      'INSERT INTO tasks (id, title, due_date, status, created_by) VALUES ($1, $2, $3, $4, $5)',
+      [id, title, dueDate, 'todo', req.user.id]
     );
 
     if (req.files && req.files.length > 0) {
@@ -137,17 +154,18 @@ router.post('/', upload.array('attachments', 3), async (req, res) => {
       }
     }
 
+    logger.info('task_created', { taskId: id, userId: req.user.id });
     const task = await getTaskWithFiles(id);
     res.status(201).json(task);
   } catch (err) {
-    console.error(err);
+    logger.error('task_create_failed', { error: err.message, userId: req.user.id });
     removeUploadedFiles(req.files);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// PUT /api/tasks/:id — обновить название и статус
-router.put('/:id', async (req, res) => {
+// PUT /api/tasks/:id - изменять может admin (любую) или editor (только свою)
+router.put('/:id', requireRole('admin', 'editor'), async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) {
     return res.status(400).json({ error: 'Некорректный id задачи' });
@@ -164,22 +182,26 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
-    const existing = await pool.query('SELECT id FROM tasks WHERE id = $1', [id]);
+    const existing = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Задача не найдена' });
     }
+    if (!canModifyTask(req.user, existing.rows[0])) {
+      return res.status(403).json({ error: 'Недостаточно прав для изменения этой задачи' });
+    }
 
     await pool.query('UPDATE tasks SET title = $1, status = $2 WHERE id = $3', [title, status, id]);
+    logger.info('task_updated', { taskId: id, userId: req.user.id });
     const task = await getTaskWithFiles(id);
     res.status(200).json(task);
   } catch (err) {
-    console.error(err);
+    logger.error('task_update_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// PATCH /api/tasks/:id/status — быстрая смена статуса
-router.patch('/:id/status', async (req, res) => {
+// PATCH /api/tasks/:id/status - быстрая смена статуса, те же права, что и у PUT
+router.patch('/:id/status', requireRole('admin', 'editor'), async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) {
     return res.status(400).json({ error: 'Некорректный id задачи' });
@@ -188,46 +210,54 @@ router.patch('/:id/status', async (req, res) => {
   const status = req.body.status === 'done' ? 'done' : 'todo';
 
   try {
-    const existing = await pool.query('SELECT id FROM tasks WHERE id = $1', [id]);
+    const existing = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Задача не найдена' });
     }
+    if (!canModifyTask(req.user, existing.rows[0])) {
+      return res.status(403).json({ error: 'Недостаточно прав для изменения этой задачи' });
+    }
 
     await pool.query('UPDATE tasks SET status = $1 WHERE id = $2', [status, id]);
+    logger.info('task_status_changed', { taskId: id, userId: req.user.id, status });
     const task = await getTaskWithFiles(id);
     res.status(200).json(task);
   } catch (err) {
-    console.error(err);
+    logger.error('task_status_change_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// DELETE /api/tasks/:id — удалить задачу и её файлы
-router.delete('/:id', async (req, res) => {
+// DELETE /api/tasks/:id - удалять может admin (любую) или editor (только свою)
+router.delete('/:id', requireRole('admin', 'editor'), async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) {
     return res.status(400).json({ error: 'Некорректный id задачи' });
   }
 
   try {
-    const filesResult = await pool.query('SELECT * FROM task_files WHERE task_id = $1', [id]);
-
-    const deleteResult = await pool.query('DELETE FROM tasks WHERE id = $1 RETURNING id', [id]);
-    if (deleteResult.rows.length === 0) {
+    const existing = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Задача не найдена' });
     }
+    if (!canModifyTask(req.user, existing.rows[0])) {
+      return res.status(403).json({ error: 'Недостаточно прав для удаления этой задачи' });
+    }
 
+    const filesResult = await pool.query('SELECT * FROM task_files WHERE task_id = $1', [id]);
+    await pool.query('DELETE FROM tasks WHERE id = $1', [id]);
     filesResult.rows.forEach(file => removeFileFromDisk(file.stored_name));
 
+    logger.info('task_deleted', { taskId: id, userId: req.user.id });
     res.status(204).end();
   } catch (err) {
-    console.error(err);
+    logger.error('task_delete_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// POST /api/tasks/:id/files — добавить файлы к существующей задаче
-router.post('/:id/files', upload.array('attachments', 3), async (req, res) => {
+// POST /api/tasks/:id/files - те же права, что на редактирование задачи
+router.post('/:id/files', requireRole('admin', 'editor'), upload.array('attachments', 3), async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) {
     removeUploadedFiles(req.files);
@@ -235,10 +265,14 @@ router.post('/:id/files', upload.array('attachments', 3), async (req, res) => {
   }
 
   try {
-    const taskResult = await pool.query('SELECT id FROM tasks WHERE id = $1', [id]);
+    const taskResult = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (taskResult.rows.length === 0) {
       removeUploadedFiles(req.files);
       return res.status(404).json({ error: 'Задача не найдена' });
+    }
+    if (!canModifyTask(req.user, taskResult.rows[0])) {
+      removeUploadedFiles(req.files);
+      return res.status(403).json({ error: 'Недостаточно прав для изменения этой задачи' });
     }
 
     const countResult = await pool.query('SELECT COUNT(*) FROM task_files WHERE task_id = $1', [id]);
@@ -265,22 +299,31 @@ router.post('/:id/files', upload.array('attachments', 3), async (req, res) => {
       });
     }
 
+    logger.info('task_files_added', { taskId: id, userId: req.user.id, count: addedFiles.length });
     res.status(201).json(addedFiles);
   } catch (err) {
-    console.error(err);
+    logger.error('task_files_add_failed', { error: err.message, userId: req.user.id });
     removeUploadedFiles(req.files);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// DELETE /api/tasks/:id/files/:fileId — удалить один файл
-router.delete('/:id/files/:fileId', async (req, res) => {
+// DELETE /api/tasks/:id/files/:fileId - те же права, что на редактирование задачи
+router.delete('/:id/files/:fileId', requireRole('admin', 'editor'), async (req, res) => {
   const { id, fileId } = req.params;
   if (!isValidId(id) || !isValidId(fileId)) {
     return res.status(400).json({ error: 'Некорректный id' });
   }
 
   try {
+    const taskResult = await pool.query('SELECT * FROM tasks WHERE id = $1', [id]);
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Задача не найдена' });
+    }
+    if (!canModifyTask(req.user, taskResult.rows[0])) {
+      return res.status(403).json({ error: 'Недостаточно прав для изменения этой задачи' });
+    }
+
     const fileResult = await pool.query(
       'SELECT * FROM task_files WHERE id = $1 AND task_id = $2',
       [fileId, id]
@@ -292,9 +335,10 @@ router.delete('/:id/files/:fileId', async (req, res) => {
     await pool.query('DELETE FROM task_files WHERE id = $1', [fileId]);
     removeFileFromDisk(fileResult.rows[0].stored_name);
 
+    logger.info('task_file_deleted', { taskId: id, fileId, userId: req.user.id });
     res.status(204).end();
   } catch (err) {
-    console.error(err);
+    logger.error('task_file_delete_failed', { error: err.message, userId: req.user.id });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

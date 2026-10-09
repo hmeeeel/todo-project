@@ -187,3 +187,31 @@ button.ribbon__day, .ribbon__day {
   .month-nav a { font-size: 0.78rem; }
   .task-file { align-items: flex-start; }
 }
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.auth-page {
+  max-width: 380px;
+  margin: 60px auto 0;
+}
+
+.auth-page__links {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.alert--success {
+  border-color: #2f9e44;
+  background: #ebfbee;
+  color: #237032;
+}
+
+@media (max-width: 600px) {
+  .auth-page { margin-top: 24px; }
+  .header-actions { width: 100%; }
+}

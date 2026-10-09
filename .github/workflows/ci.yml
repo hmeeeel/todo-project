@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package.json
+
+      - name: Установить зависимости
+        working-directory: ./backend
+        run: npm install
+
+      - name: Прогнать тесты
+        working-directory: ./backend
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout код
+        uses: actions/checkout@v4
+
+      - name: Собрать образ backend
+        run: docker build -t todo-backend ./backend
+
+      - name: Собрать образ frontend
+        run: docker build -t todo-frontend ./frontend
